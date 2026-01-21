@@ -33,13 +33,14 @@ def load_models():
         embedder = init_embedder()
         logger.info("Models loaded successfully")
 
-
+logger.info("Booting app – loading models once at startup")
+load_models()
 
 
 
 @app.route("/parse_resume", methods=["POST"])
 def api_parse_resume():
-    load_models()
+    
     logger.info("POST /parse_resume")
 
     data = request.get_json(force=True)
@@ -57,7 +58,7 @@ def api_parse_resume():
 
 @app.route("/parse_jd", methods=["POST"])
 def api_parse_jd():
-    load_models()
+    
     logger.info("POST /parse_jd")
 
     data = request.get_json(force=True)
@@ -75,7 +76,7 @@ def api_parse_jd():
 
 @app.route("/match", methods=["POST"])
 def api_match():
-    load_models()
+    
     data = request.get_json(force=True)
 
     resume_text = data.get("resume_text", "")
