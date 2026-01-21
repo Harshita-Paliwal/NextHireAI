@@ -14,7 +14,7 @@ const pdfjsLib = await import("pdfjs-dist/build/pdf");
 pdfjsLib.GlobalWorkerOptions.workerSrc =
   "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+const API_BASE_URL = "https://nexthire-ai-1zdq.onrender.com";
 
 const Button = ({
   children,
