@@ -45,8 +45,12 @@ python app.py
 
 ---
 
-### PostgreSQL
+## Database Setup
 
-Create database:
+Create the database:
 
 CREATE DATABASE nexthire;
+
+Run the schema file:
+
+psql -U postgres -d nexthire -f database/schema.sql
