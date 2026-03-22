@@ -45,6 +45,15 @@ python app.py
 
 ---
 
+## Forgot Password Setup
+
+Add this to `node backend/.env`:
+
+`FRONTEND_URL=http://localhost:5173`
+
+
+
+
 ## Database Setup
 
 Create the database:
