@@ -1,5 +1,7 @@
 import React, { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
+import html2canvas from "html2canvas";
+import { jsPDF } from "jspdf";
 import "../styles/index.css";
 import {
   FileText,
@@ -19,6 +21,7 @@ import LoginPage from "./LoginPage";
 import RegisterPage from "./RegisterPage";
 import AlertPopup from "../components/AlertPopup";
 import ConfirmDialog from "../components/ConfirmDialog";
+import ExportOptionsDialog from "../components/ExportOptionsDialog";
 
 // Renders a reusable themed button used across the workspace UI.
 const Button = ({
@@ -67,6 +70,19 @@ const badgeClass = (p) =>
 const toNum = (val, fallback = 0) => {
   const n = Number(val);
   return Number.isFinite(n) ? n : fallback;
+};
+
+const formatReportDate = (value = new Date()) =>
+  new Date(value).toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+
+const safeText = (value, fallback = "N/A") => {
+  if (value === null || value === undefined) return fallback;
+  const text = String(value).trim();
+  return text || fallback;
 };
 
 // Collects and saves job title + description before resume upload.
@@ -466,12 +482,15 @@ const CVUploadPage = ({ files, setFiles, jobDescription, setCurrentPage }) => {
 
 // Shows ranked candidates, score summary, and stage management controls.
 const DashboardPage = ({
-  files,
   setSelectedResume,
   setCurrentPage,
   jobDescription,
+  showAlert,
 }) => {
   const [candidates, setCandidates] = useState([]);
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [exportingDashboard, setExportingDashboard] = useState(false);
+  const dashboardExportRef = useRef(null);
   const analyzed = useMemo(() => {
     return candidates.map((c) => {
       const report = c.report_json || {};
@@ -524,6 +543,16 @@ const DashboardPage = ({
     };
   }, [candidates]);
 
+  const stageCounts = useMemo(
+    () =>
+      candidates.reduce((acc, candidate) => {
+        const stage = candidate.stage || "Applied";
+        acc[stage] = (acc[stage] || 0) + 1;
+        return acc;
+      }, {}),
+    [candidates],
+  );
+
   useEffect(() => {
     const loadCandidates = async () => {
       try {
@@ -562,6 +591,230 @@ const DashboardPage = ({
     }
   };
 
+  // Normalizes the on-screen candidate list into a flat export shape for XLSX.
+  const exportRows = useMemo(
+    () =>
+      analyzed.map((candidate, index) => ({
+        Rank: index + 1,
+        Candidate: candidate.name,
+        ScorePercent: `${toPct(candidate.score).toFixed(1)}%`,
+        Stage: candidate.stage || "Applied",
+        MatchedSkills: candidate.insights?.matchedSkills?.join(", ") || "-",
+        MissingSkills: candidate.insights?.missingSkills?.join(", ") || "-",
+        ExperienceMatch: candidate.insights?.expMatch || "-",
+        RoleMatch: candidate.insights?.roleMatch || "-",
+        Reasoning: candidate.insights?.reasoning || "-",
+      })),
+    [analyzed],
+  );
+
+  const closeExportDialog = () => {
+    if (exportingDashboard) return;
+    setExportDialogOpen(false);
+  };
+
+  // Exports a workbook with the candidate table first and a lighter overview tab second.
+  const exportDashboardExcel = async () => {
+    try {
+      setExportingDashboard(true);
+      const XLSX = await import("xlsx");
+      const workbook = XLSX.utils.book_new();
+
+      const overviewData = [
+        ["Candidate Dashboard Export"],
+        [],
+        ["Job Title", jobDescription.title || "Untitled Job"],
+        ["Generated", formatReportDate()],
+        ["Total Candidates", candidates.length],
+        ["Average Score", `${stats.avg}%`],
+        ["Shortlisted", stats.shortlisted],
+        [],
+        ["Stage", "Count"],
+        ...stages.map((stage) => [stage, stageCounts[stage] || 0]),
+      ];
+      const overviewSheet = XLSX.utils.aoa_to_sheet(overviewData);
+      overviewSheet["!cols"] = [{ wch: 22 }, { wch: 24 }];
+      overviewSheet["!merges"] = [
+        { s: { r: 0, c: 0 }, e: { r: 0, c: 1 } },
+      ];
+
+      const candidateColumns = [
+        "Rank",
+        "Candidate",
+        "ScorePercent",
+        "Stage",
+        "MatchedSkills",
+        "MissingSkills",
+        "ExperienceMatch",
+        "RoleMatch",
+        "Reasoning",
+      ];
+
+      const candidatesSheet = XLSX.utils.json_to_sheet(exportRows, {
+        header: candidateColumns,
+      });
+      candidatesSheet["!cols"] = [
+        { wch: 8 },
+        { wch: 34 },
+        { wch: 14 },
+        { wch: 16 },
+        { wch: 34 },
+        { wch: 34 },
+        { wch: 18 },
+        { wch: 16 },
+        { wch: 72 },
+      ];
+      candidatesSheet["!autofilter"] = {
+        ref: `A1:I${Math.max(exportRows.length + 1, 2)}`,
+      };
+      candidatesSheet["!freeze"] = { xSplit: 0, ySplit: 1 };
+
+      XLSX.utils.book_append_sheet(workbook, candidatesSheet, "Candidates");
+      XLSX.utils.book_append_sheet(workbook, overviewSheet, "Overview");
+
+      XLSX.writeFile(
+        workbook,
+        `${safeText(jobDescription.title, "job")
+          .replace(/[\\/:*?"<>|]+/g, "_")
+          .replace(/\s+/g, "_")}_candidates.xlsx`,
+      );
+
+      setExportDialogOpen(false);
+      showAlert?.({
+        type: "success",
+        title: "Excel exported",
+        message: "Candidate dashboard has been exported to Excel.",
+      });
+    } catch (err) {
+      console.error("Failed to export Excel", err);
+      showAlert?.({
+        type: "error",
+        title: "Export failed",
+        message: "Could not export candidates to Excel.",
+      });
+    } finally {
+      setExportingDashboard(false);
+    }
+  };
+
+  // Captures a hidden report-only dashboard layout so the PDF stays consistent with the UI theme.
+  const exportDashboardPdf = async () => {
+    try {
+      setExportingDashboard(true);
+      const sourceNode = dashboardExportRef.current;
+      if (!sourceNode) {
+        throw new Error("Dashboard export content not available");
+      }
+
+      await new Promise((resolve) => window.requestAnimationFrame(resolve));
+
+      const canvas = await html2canvas(sourceNode, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: "#05091d",
+        logging: false,
+        windowWidth: 1200,
+        scrollX: 0,
+        scrollY: 0,
+      });
+
+      const doc = new jsPDF("p", "pt", "a4");
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const margin = 18;
+      const printableWidth = pageWidth - margin * 2;
+      const printableHeight = pageHeight - margin * 2;
+      const scaleRatio = printableWidth / canvas.width;
+      const pageCanvasHeight = Math.floor(printableHeight / scaleRatio);
+      let renderedHeight = 0;
+      let pageNumber = 0;
+
+      // Slice one tall canvas into page-sized images so long dashboards export cleanly.
+      while (renderedHeight < canvas.height) {
+        if (pageNumber > 0) {
+          doc.addPage();
+        }
+
+        const sliceHeight = Math.min(
+          pageCanvasHeight,
+          canvas.height - renderedHeight,
+        );
+        const pageCanvas = document.createElement("canvas");
+        pageCanvas.width = canvas.width;
+        pageCanvas.height = sliceHeight;
+
+        const pageContext = pageCanvas.getContext("2d");
+        if (!pageContext) {
+          throw new Error("Failed to prepare dashboard PDF canvas");
+        }
+
+        pageContext.fillStyle = "#05091d";
+        pageContext.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
+        pageContext.drawImage(
+          canvas,
+          0,
+          renderedHeight,
+          canvas.width,
+          sliceHeight,
+          0,
+          0,
+          canvas.width,
+          sliceHeight,
+        );
+
+        const pageImage = pageCanvas.toDataURL("image/png");
+        const renderedPageHeight = sliceHeight * scaleRatio;
+        doc.addImage(
+          pageImage,
+          "PNG",
+          margin,
+          margin,
+          printableWidth,
+          renderedPageHeight,
+        );
+
+        renderedHeight += sliceHeight;
+        pageNumber += 1;
+      }
+
+      const totalPages = doc.getNumberOfPages();
+      for (let page = 1; page <= totalPages; page += 1) {
+        doc.setPage(page);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(10);
+        doc.setTextColor(210, 219, 255);
+        doc.text(
+          `Page ${page} of ${totalPages}`,
+          pageWidth - margin,
+          pageHeight - 8,
+          { align: "right" },
+        );
+      }
+
+      doc.save(
+        `${safeText(jobDescription.title, "job")
+          .replace(/[\\/:*?"<>|]+/g, "_")
+          .replace(/\s+/g, "_")}_candidates.pdf`,
+      );
+
+      setExportDialogOpen(false);
+      showAlert?.({
+        type: "success",
+        title: "PDF exported",
+        message: "Candidate dashboard has been exported to PDF.",
+      });
+    } catch (err) {
+      console.error("Failed to export dashboard PDF", err);
+      showAlert?.({
+        type: "error",
+        title: "Export failed",
+        message: "Could not export candidates to PDF.",
+      });
+    } finally {
+      setExportingDashboard(false);
+    }
+  };
+
   if (analyzed.length === 0) {
     return (
       <div className="page-wrapper">
@@ -578,10 +831,22 @@ const DashboardPage = ({
   return (
     <div className="page-wrapper">
       <div className="content-card">
-        <h2 className="content-card-title">Dashboard</h2>
+        <div className="dashboard-header-row">
+          <div>
+            <h2 className="content-card-title">Dashboard</h2>
         <h2 className="content-card-title-2">
           {jobDescription.title} — Candidates
         </h2>
+
+          </div>
+          <Button
+            variant="secondary"
+            className="dashboard-export-btn"
+            onClick={() => setExportDialogOpen(true)}
+          >
+            Export
+          </Button>
+        </div>
 
         <div className="dashboard-stats">
           <div className="stat-card">
@@ -605,8 +870,6 @@ const DashboardPage = ({
             const p = toPct(f.score);
             const head = f.name;
             const email = candidates[idx]?.email || "";
-            const phone = "";
-
             return (
               <li key={f.id} className="dash-item">
                 <details>
@@ -735,6 +998,88 @@ const DashboardPage = ({
           })}
         </ul>
       </div>
+      <div className="dashboard-export-shell" aria-hidden="true">
+        <div className="dashboard-export-report" ref={dashboardExportRef}>
+          <div className="formal-line" />
+          <div className="formal-title">Candidate Dashboard Report</div>
+          <div className="formal-meta">
+            <div>
+              <strong>Job Title:</strong> {jobDescription.title}
+            </div>
+            <div>
+              <strong>Generated:</strong> {formatReportDate()}
+            </div>
+            <div>
+              <strong>Total Candidates:</strong> {candidates.length}
+            </div>
+          </div>
+
+          <div className="dashboard-export-stats">
+            <div className="dashboard-export-stat-card">
+              <strong>{candidates.length}</strong>
+              <span>Candidates</span>
+            </div>
+            <div className="dashboard-export-stat-card">
+              <strong>{stats.avg}%</strong>
+              <span>Avg Score</span>
+            </div>
+            <div className="dashboard-export-stat-card">
+              <strong>{stats.shortlisted}</strong>
+              <span>Shortlisted</span>
+            </div>
+          </div>
+
+          <div className="dashboard-export-stage-grid">
+            {stages.map((stage) => (
+              <div key={stage} className="dashboard-export-stage-card">
+                <strong>{stageCounts[stage] || 0}</strong>
+                <span>{stage}</span>
+              </div>
+            ))}
+          </div>
+
+          <div className="dash-block">
+            <h3 className="report-section-title">Candidate Summary</h3>
+            <table className="dashboard-export-table">
+              <thead>
+                <tr>
+                  <th>Rank</th>
+                  <th>Candidate</th>
+                  <th>Score</th>
+                  <th>Stage</th>
+                  <th>Matched Skills</th>
+                  <th>Missing Skills</th>
+                </tr>
+              </thead>
+              <tbody>
+                {analyzed.map((candidate, index) => (
+                  <tr key={candidate.id}>
+                    <td>#{index + 1}</td>
+                    <td>{candidate.name}</td>
+                    <td>{toPct(candidate.score).toFixed(1)}%</td>
+                    <td>{candidate.stage || "Applied"}</td>
+                    <td>
+                      {candidate.insights?.matchedSkills?.join(", ") || "-"}
+                    </td>
+                    <td>
+                      {candidate.insights?.missingSkills?.join(", ") || "-"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="formal-line" style={{ marginTop: "2rem" }} />
+        </div>
+      </div>
+      <ExportOptionsDialog
+        open={exportDialogOpen}
+        loading={exportingDashboard}
+        onCancel={closeExportDialog}
+        onExportExcel={exportDashboardExcel}
+        onExportPdf={exportDashboardPdf}
+      />
     </div>
   );
 };
@@ -742,7 +1087,6 @@ const DashboardPage = ({
 // Displays detailed screening and interview intelligence for one candidate.
 const InterviewPage = ({
   jobDescription,
-  resumeText,
   candidateName,
   onExit,
   candidateId,
@@ -750,6 +1094,8 @@ const InterviewPage = ({
   const [data, setData] = useState(null);
   const interview = data?.interview || {};
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
+  const reportPdfRef = useRef(null);
 
   useEffect(() => {
     const fetchInterviewInsights = async () => {
@@ -784,8 +1130,108 @@ const InterviewPage = ({
     );
   }
 
-  const exportPDF = () => {
-    window.print();
+  const exportPDF = async () => {
+    try {
+      setExporting(true);
+      const sourceNode = reportPdfRef.current;
+      if (!sourceNode) {
+        throw new Error("Report content not available for export");
+      }
+
+      await new Promise((resolve) => window.requestAnimationFrame(resolve));
+
+      const canvas = await html2canvas(sourceNode, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: null,
+        logging: false,
+        windowWidth: document.documentElement.clientWidth,
+        scrollX: 0,
+        scrollY: -window.scrollY,
+      });
+
+      const doc = new jsPDF("p", "pt", "a4");
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const margin = 18;
+      const printableWidth = pageWidth - margin * 2;
+      const printableHeight = pageHeight - margin * 2;
+      const scaleRatio = printableWidth / canvas.width;
+      const pageCanvasHeight = Math.floor(printableHeight / scaleRatio);
+      const fileName = `${safeText(candidateName, "candidate")
+        .replace(/[\\/:*?"<>|]+/g, "_")
+        .replace(/\s+/g, "_")}_interview_report.pdf`;
+
+      let renderedHeight = 0;
+      let pageNumber = 0;
+
+      while (renderedHeight < canvas.height) {
+        if (pageNumber > 0) {
+          doc.addPage();
+        }
+
+        const sliceHeight = Math.min(
+          pageCanvasHeight,
+          canvas.height - renderedHeight,
+        );
+        const pageCanvas = document.createElement("canvas");
+        pageCanvas.width = canvas.width;
+        pageCanvas.height = sliceHeight;
+
+        const pageContext = pageCanvas.getContext("2d");
+        if (!pageContext) {
+          throw new Error("Failed to prepare PDF canvas");
+        }
+
+        pageContext.fillStyle = "#05091d";
+        pageContext.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
+        pageContext.drawImage(
+          canvas,
+          0,
+          renderedHeight,
+          canvas.width,
+          sliceHeight,
+          0,
+          0,
+          canvas.width,
+          sliceHeight,
+        );
+
+        const pageImage = pageCanvas.toDataURL("image/png");
+        const renderedPageHeight = sliceHeight * scaleRatio;
+        doc.addImage(
+          pageImage,
+          "PNG",
+          margin,
+          margin,
+          printableWidth,
+          renderedPageHeight,
+        );
+
+        renderedHeight += sliceHeight;
+        pageNumber += 1;
+      }
+
+      const totalPages = doc.getNumberOfPages();
+      for (let page = 1; page <= totalPages; page += 1) {
+        doc.setPage(page);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(10);
+        doc.setTextColor(210, 219, 255);
+        doc.text(
+          `Page ${page} of ${totalPages}`,
+          pageWidth - margin,
+          pageHeight - 8,
+          { align: "right" },
+        );
+      }
+
+      doc.save(fileName);
+    } catch (err) {
+      console.error("Failed to export PDF", err);
+    } finally {
+      setExporting(false);
+    }
   };
 
   return (
@@ -800,14 +1246,15 @@ const InterviewPage = ({
           }}
         >
           <h2 className="content-card-title">Interview Intelligence Report</h2>
-          <Button variant="secondary" onClick={exportPDF}>
-            Export PDF
+          <Button variant="secondary" onClick={exportPDF} disabled={exporting}>
+            {exporting ? "Exporting..." : "Export PDF"}
           </Button>
         </div>
 
-        {/* ========================================================= */}
-        {/* ================= FORMAL REPORT HEADER ================== */}
-        {/* ========================================================= */}
+        <div ref={reportPdfRef}>
+          {/* ========================================================= */}
+          {/* ================= FORMAL REPORT HEADER ================== */}
+          {/* ========================================================= */}
 
         <div className="formal-line" />
 
@@ -822,11 +1269,7 @@ const InterviewPage = ({
           </div>
           <div>
             <strong>Generated:</strong>{" "}
-            {new Date().toLocaleDateString("en-GB", {
-              day: "2-digit",
-              month: "short",
-              year: "numeric",
-            })}
+            {formatReportDate()}
           </div>
         </div>
 
@@ -1070,8 +1513,9 @@ const InterviewPage = ({
           </div>
         </div>
 
-        {/* BOTTOM DIVIDER */}
-        <div className="formal-line" style={{ marginTop: "2rem" }} />
+          {/* BOTTOM DIVIDER */}
+          <div className="formal-line" style={{ marginTop: "2rem" }} />
+        </div>
 
         <div style={{ marginTop: "2rem" }}>
           <Button variant="primary" onClick={onExit}>
@@ -1383,10 +1827,10 @@ const App = ({ initialAuthPage = "login" }) => {
       case "dashboard":
         return (
           <DashboardPage
-            files={files}
             jobDescription={jobDescription}
             setSelectedResume={setSelectedResume}
             setCurrentPage={setCurrentPage}
+            showAlert={showAlert}
           />
         );
 
@@ -1394,7 +1838,6 @@ const App = ({ initialAuthPage = "login" }) => {
         return (
           <InterviewPage
             jobDescription={jobDescription}
-            resumeText={selectedResume?.rawText || ""}
             candidateName={
               selectedResume?.insights?.contact?.name ||
               selectedResume?.name ||

@@ -949,6 +949,18 @@ body {
   margin-bottom: 20px;
 }
 
+.dashboard-header-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.dashboard-export-btn {
+  margin: 0 !important;
+  min-width: 110px;
+}
+
 .stat-card {
   background: #f8fafc;
   padding: 12px 16px;
@@ -959,6 +971,90 @@ body {
 
 .stat-card strong {
   font-size: 18px;
+}
+
+/* Off-screen surface used only when rendering the dashboard PDF capture. */
+.dashboard-export-shell {
+  position: fixed;
+  left: -10000px;
+  top: 0;
+  width: 1200px;
+  pointer-events: none;
+}
+
+.dashboard-export-report {
+  width: 1200px;
+  padding: 32px;
+  background:
+    radial-gradient(circle at 18% -10%, rgba(111, 129, 255, 0.22), transparent 40%),
+    radial-gradient(circle at 96% 8%, rgba(37, 215, 242, 0.11), transparent 34%),
+    #05091d;
+  color: #f5f7ff;
+}
+
+.dashboard-export-stats,
+.dashboard-export-stage-grid {
+  display: grid;
+  gap: 14px;
+  margin: 1.25rem 0 0;
+}
+
+.dashboard-export-stats {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.dashboard-export-stage-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-bottom: 1.5rem;
+}
+
+.dashboard-export-stat-card,
+.dashboard-export-stage-card {
+  border: 1px solid #263266;
+  border-radius: 14px;
+  background: rgba(12, 18, 48, 0.88);
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.dashboard-export-stat-card strong,
+.dashboard-export-stage-card strong {
+  font-size: 1.7rem;
+  color: #f5f7ff;
+}
+
+.dashboard-export-stat-card span,
+.dashboard-export-stage-card span {
+  color: #9ea8cb;
+}
+
+.dashboard-export-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 1rem;
+  table-layout: fixed;
+}
+
+.dashboard-export-table th,
+.dashboard-export-table td {
+  border: 1px solid #263266;
+  padding: 10px 12px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.dashboard-export-table th {
+  background: rgba(27, 39, 91, 0.95);
+  color: #f5f7ff;
+  font-weight: 700;
+}
+
+.dashboard-export-table td {
+  background: rgba(12, 18, 48, 0.88);
+  color: #d6def8;
+  word-break: break-word;
 }
 
 /* ===== Dark Theme Overrides For /app ===== */
