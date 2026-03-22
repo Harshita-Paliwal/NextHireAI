@@ -1,0 +1,257 @@
+.page {
+  --bg: #05091d;
+  --surface: #0c1230;
+  --text: #f5f7ff;
+  --muted: #9ea8cb;
+  --line: #1c2756;
+  --primary: #6e76ff;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  position: relative;
+  overflow: hidden;
+  padding: 24px;
+  background:
+    radial-gradient(circle at 20% -10%, rgba(111, 129, 255, 0.25), transparent 40%),
+    radial-gradient(circle at 95% 10%, rgba(37, 215, 242, 0.14), transparent 36%),
+    var(--bg);
+}
+
+.bgGlow {
+  position: absolute;
+  width: 520px;
+  height: 520px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(111, 129, 255, 0.28), transparent 70%);
+  top: -120px;
+  right: -120px;
+  pointer-events: none;
+}
+
+.bgGrid {
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(rgba(124, 133, 168, 0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(124, 133, 168, 0.07) 1px, transparent 1px);
+  background-size: 30px 30px;
+  mask-image: radial-gradient(circle at 50% 30%, #000, transparent 80%);
+  pointer-events: none;
+}
+
+.card {
+  width: min(100%, 430px);
+  border-radius: 16px;
+  background: rgba(12, 18, 48, 0.9);
+  border: 1px solid var(--line);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.32);
+  padding: 28px;
+  position: relative;
+  z-index: 1;
+}
+
+.logoArea {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  margin-bottom: 16px;
+}
+
+.logoMark {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #4f6bff, #7084ff);
+  color: white;
+  font-weight: 800;
+  display: grid;
+  place-items: center;
+}
+
+.logoText {
+  color: var(--text);
+  font-weight: 800;
+  font-size: 1.05rem;
+}
+
+.logoText span {
+  color: var(--primary);
+}
+
+.title {
+  margin: 0;
+  font-size: 1.65rem;
+  color: var(--text);
+}
+
+.subtitle {
+  margin: 8px 0 20px;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.error {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #991b1b;
+  font-size: 0.84rem;
+}
+
+.form {
+  display: grid;
+  gap: 14px;
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+}
+
+.label {
+  color: #d6def8;
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.input {
+  border: 1px solid #263266;
+  border-radius: 10px;
+  padding: 11px 12px;
+  font-size: 0.92rem;
+  outline: none;
+  transition: 0.18s ease;
+  background: #0f173d;
+  color: #f5f7ff;
+}
+
+.input:focus {
+  border-color: #7b84ff;
+  box-shadow: 0 0 0 3px rgba(111, 129, 255, 0.25);
+}
+
+.forgotLink {
+  justify-self: end;
+  color: #8f9bff;
+  font-size: 0.8rem;
+  text-decoration: none;
+}
+
+.submitBtn {
+  margin-top: 4px;
+  border: none;
+  border-radius: 11px;
+  padding: 12px;
+  font-weight: 800;
+  font-size: 0.95rem;
+  background: linear-gradient(120deg, #6e76ff, #7183ff);
+  color: white;
+  cursor: pointer;
+  box-shadow: 0 12px 26px rgba(110, 118, 255, 0.35);
+}
+
+.submitBtn:disabled {
+  opacity: 0.75;
+  cursor: not-allowed;
+}
+
+.switchText {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.switchLink {
+  color: #8f9bff;
+  text-decoration: none;
+  font-weight: 700;
+}
+
+@media (max-width: 640px) {
+  .page {
+    padding: 12px;
+    place-items: start center;
+  }
+
+  .bgGlow {
+    width: 320px;
+    height: 320px;
+    top: -90px;
+    right: -90px;
+  }
+
+  .card {
+    width: 100%;
+    max-width: 420px;
+    margin-top: 20px;
+    border-radius: 14px;
+    padding: 18px 14px;
+  }
+
+  .title {
+    font-size: 1.35rem;
+  }
+
+  .subtitle {
+    margin: 6px 0 14px;
+    font-size: 0.86rem;
+  }
+
+  .form {
+    gap: 10px;
+  }
+
+  .input {
+    padding: 10px 11px;
+    font-size: 0.9rem;
+  }
+
+  .submitBtn {
+    padding: 10px;
+    font-size: 0.9rem;
+  }
+
+  .switchText {
+    font-size: 0.8rem;
+  }
+}
+
+@media (max-width: 420px) {
+  .page {
+    padding: 8px;
+  }
+
+  .card {
+    margin-top: 10px;
+    padding: 14px 12px;
+    border-radius: 12px;
+  }
+
+  .logoMark {
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+  }
+
+  .logoText {
+    font-size: 0.95rem;
+  }
+
+  .title {
+    font-size: 1.2rem;
+  }
+
+  .subtitle {
+    font-size: 0.82rem;
+  }
+
+  .label {
+    font-size: 0.82rem;
+  }
+
+  .forgotLink {
+    font-size: 0.76rem;
+  }
+}

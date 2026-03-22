@@ -1,5 +1,6 @@
-import React, { useEffect, useState, useMemo, useCallback } from "react";
-import "./index.css";
+import React, { useEffect, useState, useMemo, useCallback, useRef } from "react";
+import { useNavigate } from "react-router-dom";
+import "../styles/index.css";
 import {
   FileText,
   Upload,
@@ -8,13 +9,19 @@ import {
   LayoutList,
   CheckCircle,
   AlertTriangle,
+  House,
+  LogOut,
+  Menu,
+  X,
 } from "lucide-react";
-import api from "./api";
+import api from "../api/api";
 const pdfjsLib = await import("pdfjs-dist/build/pdf");
 pdfjsLib.GlobalWorkerOptions.workerSrc =
   "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js";
 import LoginPage from "./LoginPage";
 import RegisterPage from "./RegisterPage";
+import AlertPopup from "../components/AlertPopup";
+import ConfirmDialog from "../components/ConfirmDialog";
 
 // const API_BASE_URL = "https://nexthire-ai-1zdq.onrender.com";
 // const API_BASE_URL = "http://127.0.0.1:8000";
@@ -63,6 +70,10 @@ const badgeClass = (p) =>
 const toInt = (val) => {
   const n = parseInt(val, 10);
   return Number.isFinite(n) ? n : null;
+};
+const toNum = (val, fallback = 0) => {
+  const n = Number(val);
+  return Number.isFinite(n) ? n : fallback;
 };
 
 // --- Page Components ---
@@ -520,7 +531,7 @@ const DashboardPage = ({
       return {
         id: c.id,
         name: c.name,
-        score: (c.ai_score || 0) / 100,
+        score: toNum(c.ai_score, 0) / 100,
         candidateId: c.id,
         stage: c.stage,
 
@@ -549,7 +560,7 @@ const DashboardPage = ({
     if (!candidates.length) return { avg: 0, shortlisted: 0 };
 
     const avg =
-      candidates.reduce((sum, c) => sum + (c.ai_score || 0), 0) /
+      candidates.reduce((sum, c) => sum + toNum(c.ai_score, 0), 0) /
       candidates.length;
 
     const shortlisted = candidates.filter(
@@ -654,7 +665,7 @@ const DashboardPage = ({
                       <span className="dash-name">{head}</span>
                       {email && <span className="dash-meta">{email}</span>}
                     </div>
-                    <div className="dash-right">
+                    <div className="dash-right dash-controls">
                       <span className="dash-rank">#{idx + 1}</span>
                       <select
                         value={f.stage || "Applied"}
@@ -669,6 +680,7 @@ const DashboardPage = ({
                       </select>
                       <Button
                         variant="secondary"
+                        className="interview-btn"
                         onClick={() => {
                           setSelectedResume({
                             ...f,
@@ -1121,6 +1133,8 @@ const InterviewPage = ({
 
 const JobsPage = ({ setCurrentPage, setJobDescription, setFiles }) => {
   const [jobs, setJobs] = useState([]);
+  const [jobToDelete, setJobToDelete] = useState(null);
+  const [isDeletingJob, setIsDeletingJob] = useState(false);
 
   useEffect(() => {
     const loadJobs = async () => {
@@ -1143,37 +1157,33 @@ const JobsPage = ({ setCurrentPage, setJobDescription, setFiles }) => {
 
   return (
     <div className="page-wrapper">
-      <div className="content-card">
+      <div className="content-card jobs-card">
         <h2 className="content-card-title">Your Jobs</h2>
 
         {jobs.length === 0 ? (
           <p>No jobs created yet.</p>
         ) : (
-          <ul className="dash-list">
+          <ul className="dash-list jobs-list">
             {jobs.map((job) => (
-              <li key={job.id} className="dash-item">
-                <div className="dash-summary">
+              <li key={job.id} className="dash-item jobs-item">
+                <div className="dash-summary jobs-summary">
                   <div className="dash-left">
                     <span className="dash-name">{job.title}</span>
                   </div>
 
-                  <div className="dash-right">
-                    <Button variant="secondary" onClick={() => openJob(job)}>
+                  <div className="dash-right jobs-actions">
+                    <Button
+                      variant="secondary"
+                      className="job-action-btn"
+                      onClick={() => openJob(job)}
+                    >
                       Open Job
                     </Button>
 
                     <Button
                       variant="danger"
-                      onClick={async () => {
-                        try {
-                          await api.delete(`/jobs/${job.id}`);
-                          setJobs((prev) =>
-                            prev.filter((j) => j.id !== job.id),
-                          );
-                        } catch (err) {
-                          console.error("Delete failed", err);
-                        }
-                      }}
+                      className="job-action-btn"
+                      onClick={() => setJobToDelete(job)}
                     >
                       Delete
                     </Button>
@@ -1184,30 +1194,45 @@ const JobsPage = ({ setCurrentPage, setJobDescription, setFiles }) => {
           </ul>
         )}
 
-        <div style={{ marginTop: "20px" }}>
-          <Button
-            onClick={() => {
-              setJobDescription({
-                title: "",
-                description: "",
-              });
-
-              setFiles([]); // clear previous resumes
-
-              setCurrentPage("job");
-            }}
-          >
-            Create New Job
-          </Button>
-        </div>
       </div>
+      <ConfirmDialog
+        open={Boolean(jobToDelete)}
+        title="Delete Job?"
+        message={
+          jobToDelete
+            ? `This will permanently delete "${jobToDelete.title}" and all related candidates/reports.`
+            : ""
+        }
+        confirmText="Delete"
+        cancelText="Cancel"
+        danger
+        loading={isDeletingJob}
+        onCancel={() => {
+          if (isDeletingJob) return;
+          setJobToDelete(null);
+        }}
+        onConfirm={async () => {
+          if (!jobToDelete) return;
+          try {
+            setIsDeletingJob(true);
+            await api.delete(`/jobs/${jobToDelete.id}`);
+            setJobs((prev) => prev.filter((j) => j.id !== jobToDelete.id));
+            setJobToDelete(null);
+          } catch (err) {
+            console.error("Delete failed", err);
+          } finally {
+            setIsDeletingJob(false);
+          }
+        }}
+      />
     </div>
   );
 };
 
 // --- Main App Component ---
 
-const App = () => {
+const App = ({ initialAuthPage = "login" }) => {
+  const navigate = useNavigate();
   const [currentPage, setCurrentPage] = useState("jobs");
   const [jobDescription, setJobDescription] = useState({
     title: "",
@@ -1216,7 +1241,39 @@ const App = () => {
   const [files, setFiles] = useState([]);
   const [selectedResume, setSelectedResume] = useState(null);
   const [user, setUser] = useState(null);
-  const [authPage, setAuthPage] = useState("login");
+  const [confirmLogoutOpen, setConfirmLogoutOpen] = useState(false);
+  const [confirmHomeOpen, setConfirmHomeOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [authPage, setAuthPage] = useState(initialAuthPage);
+  const [popup, setPopup] = useState({
+    open: false,
+    type: "info",
+    title: "",
+    message: "",
+  });
+  const popupTimerRef = useRef(null);
+
+  const closePopup = useCallback(() => {
+    if (popupTimerRef.current) {
+      clearTimeout(popupTimerRef.current);
+      popupTimerRef.current = null;
+    }
+    setPopup((prev) => ({ ...prev, open: false }));
+  }, []);
+
+  const showAlert = useCallback(
+    ({ type = "info", title = "Notification", message = "", duration = 3000 }) => {
+      if (popupTimerRef.current) {
+        clearTimeout(popupTimerRef.current);
+      }
+
+      setPopup({ open: true, type, title, message });
+      popupTimerRef.current = setTimeout(() => {
+        closePopup();
+      }, duration);
+    },
+    [closePopup],
+  );
 
   useEffect(() => {
     const wakeBackend = async () => {
@@ -1233,18 +1290,107 @@ const App = () => {
     wakeBackend();
   }, []);
 
+  useEffect(
+    () => () => {
+      if (popupTimerRef.current) {
+        clearTimeout(popupTimerRef.current);
+      }
+    },
+    [],
+  );
+
   useEffect(() => {
     const token = localStorage.getItem("token");
 
-    if (token) {
-      setUser({ loggedIn: true });
-    }
+    if (!token) return;
+
+    const loadProfile = async () => {
+      try {
+        const res = await api.get("/auth/me");
+        const me = res.data?.user || res.data;
+        setUser({ loggedIn: true, ...me });
+        localStorage.setItem("nh_user", JSON.stringify(me));
+      } catch (err) {
+        const raw = localStorage.getItem("nh_user");
+        if (raw) {
+          try {
+            const cached = JSON.parse(raw);
+            setUser({ loggedIn: true, ...cached });
+            return;
+          } catch (_) {
+            setUser({ loggedIn: true, email: raw, name: raw.split("@")[0] });
+            return;
+          }
+        }
+        setUser({ loggedIn: true });
+      }
+    };
+
+    loadProfile();
+  }, []);
+
+  useEffect(() => {
+    setAuthPage(initialAuthPage);
+  }, [initialAuthPage]);
+
+  useEffect(() => {
+    const onResize = () => {
+      if (window.innerWidth > 768) {
+        setMobileMenuOpen(false);
+      }
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
   }, []);
 
   const logout = () => {
     localStorage.removeItem("token");
+    localStorage.removeItem("nh_user");
     setUser(null);
+    navigate("/login");
   };
+
+  const goHomeAndLogout = () => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("nh_user");
+    setUser(null);
+    navigate("/");
+  };
+
+  const sidebarUser = useMemo(() => {
+    if (user?.name || user?.email) {
+      const name = user.name || user.email.split("@")[0] || "Recruiter";
+      const initials = name
+        .split(" ")
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((p) => p[0]?.toUpperCase())
+        .join("") || "R";
+      return { name, initials };
+    }
+
+    try {
+      const raw = localStorage.getItem("nh_user");
+      if (!raw) {
+        return { name: "Recruiter", initials: "R" };
+      }
+      const parsed = raw.startsWith("{") ? JSON.parse(raw) : { email: raw };
+      const name =
+        parsed?.name ||
+        parsed?.fullName ||
+        parsed?.email?.split("@")?.[0] ||
+        "Recruiter";
+      const initials = name
+        .split(" ")
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((p) => p[0]?.toUpperCase())
+        .join("") || "R";
+      return { name, initials };
+    } catch (e) {
+      return { name: "Recruiter", initials: "R" };
+    }
+  }, [user]);
 
   const renderPage = useMemo(() => {
     switch (currentPage) {
@@ -1309,17 +1455,20 @@ const App = () => {
     }
   }, [currentPage, jobDescription, files]);
 
-  const NavItem = ({ page, label, icon: Icon }) => {
-    const isActive = currentPage === page;
-    const activeClass = "nav-item-active";
-    const inactiveClass = "nav-item-inactive";
+  const SidebarItem = ({ page, label, icon: Icon }) => {
+    const isActive = currentPage === page || (page === "dashboard" && currentPage === "interview");
+    const activeClass = "workspace-nav-item-active";
+    const inactiveClass = "workspace-nav-item-inactive";
 
     return (
       <button
-        onClick={() => setCurrentPage(page)}
-        className={`nav-item ${isActive ? activeClass : inactiveClass}`}
+        onClick={() => {
+          setCurrentPage(page);
+          setMobileMenuOpen(false);
+        }}
+        className={`workspace-nav-item ${isActive ? activeClass : inactiveClass}`}
       >
-        <Icon size={20} /> <span>{label}</span>{" "}
+        <Icon size={18} /> <span>{label}</span>
       </button>
     );
   };
@@ -1327,37 +1476,166 @@ const App = () => {
   // AUTH ROUTING
   if (!user) {
     if (authPage === "login") {
-      return <LoginPage setUser={setUser} setPage={setAuthPage} />;
+      return (
+        <>
+          <LoginPage
+            setUser={setUser}
+            setPage={setAuthPage}
+            showAlert={showAlert}
+          />
+          <AlertPopup
+            open={popup.open}
+            type={popup.type}
+            title={popup.title}
+            message={popup.message}
+            onClose={closePopup}
+          />
+        </>
+      );
     }
 
-    return <RegisterPage setPage={setAuthPage} />;
+    return (
+      <>
+        <RegisterPage setPage={setAuthPage} showAlert={showAlert} />
+        <AlertPopup
+          open={popup.open}
+          type={popup.type}
+          title={popup.title}
+          message={popup.message}
+          onClose={closePopup}
+        />
+      </>
+    );
   }
   return (
-    <div className="app-container">
-      {}
-      {}{" "}
-      <header className="app-header">
-        {" "}
-        <div className="header-content">
-          {" "}
-          <h1 className="app-title">
-            <Zap size={30} className="app-title-icon" />
-            NextHire AI{" "}
-          </h1>{" "}
-          <nav className="app-nav">
-            {" "}
-            <NavItem page="jobs" label="Jobs" icon={LayoutList} />
-            <NavItem page="job" label="Define Job" icon={FileText} />
-            <NavItem page="cvs" label="Upload CVs" icon={Upload} />{" "}
-            <NavItem page="dashboard" label="Dashboard" icon={LayoutList} />
-            <Button variant="secondary" onClick={logout}>
+    <>
+      <div className="workspace-shell">
+        {mobileMenuOpen && (
+          <button
+            type="button"
+            aria-label="Close menu overlay"
+            className="workspace-mobile-backdrop"
+            onClick={() => setMobileMenuOpen(false)}
+          />
+        )}
+
+        <aside className={`workspace-sidebar ${mobileMenuOpen ? "workspace-sidebar-open" : ""}`}>
+          <div className="workspace-brand">
+            <div className="workspace-brand-mark">N</div>
+            <h1 className="workspace-brand-title">NextHire AI</h1>
+            <button
+              type="button"
+              className="workspace-close-btn"
+              onClick={() => setMobileMenuOpen(false)}
+              aria-label="Close menu"
+            >
+              <X size={18} />
+            </button>
+          </div>
+
+          <nav className="workspace-nav">
+            <SidebarItem page="jobs" label="Job Roles" icon={LayoutList} />
+            <SidebarItem page="job" label="Define Job" icon={FileText} />
+            <SidebarItem page="cvs" label="Parse Resumes" icon={Upload} />
+            <SidebarItem page="dashboard" label="Dashboard" icon={LayoutList} />
+          </nav>
+
+          <div className="workspace-sidebar-foot">
+            <div className="workspace-user-chip">
+              <span className="workspace-user-avatar">{sidebarUser.initials}</span>
+              <span className="workspace-user-name">{sidebarUser.name}</span>
+            </div>
+            <Button
+              variant="secondary"
+              className="workspace-side-btn"
+              icon={House}
+              onClick={() => setConfirmHomeOpen(true)}
+            >
+              Home
+            </Button>
+            <Button
+              variant="danger"
+              className="workspace-side-btn"
+              icon={LogOut}
+              onClick={() => setConfirmLogoutOpen(true)}
+            >
               Logout
             </Button>
-          </nav>
-        </div>{" "}
-      </header>
-      {} <main className="main-content">{renderPage}</main>{" "}
-    </div>
+          </div>
+        </aside>
+
+        <div className="workspace-main">
+          <header className="workspace-topbar">
+            <div className="workspace-topbar-left">
+              <button
+                type="button"
+                className="workspace-menu-btn"
+                onClick={() => setMobileMenuOpen(true)}
+                aria-label="Open menu"
+              >
+                <Menu size={18} />
+              </button>
+              <span className="workspace-mobile-title">NextHire AI</span>
+              <h2 className="workspace-page-title">
+                {currentPage === "job" && "Define Job"}
+                {currentPage === "jobs" && "Job Roles"}
+                {currentPage === "cvs" && "Upload Resumes"}
+                {currentPage === "dashboard" && "Candidates"}
+                {currentPage === "interview" && "Interview Assistant"}
+              </h2>
+            </div>
+
+            <div className="workspace-topbar-actions">
+              <Button
+                variant="primary"
+                className="workspace-action-btn"
+                onClick={() => {
+                  setJobDescription({ title: "", description: "" });
+                  setFiles([]);
+                  setCurrentPage("job");
+                }}
+              >
+                + Create Job
+              </Button>
+            </div>
+          </header>
+
+          <main className="workspace-content">{renderPage}</main>
+        </div>
+      </div>
+      <AlertPopup
+        open={popup.open}
+        type={popup.type}
+        title={popup.title}
+        message={popup.message}
+        onClose={closePopup}
+      />
+      <ConfirmDialog
+        open={confirmHomeOpen}
+        title="Go Home?"
+        message="Going to Home will log you out. You will need to login again."
+        confirmText="Go Home"
+        cancelText="Cancel"
+        onCancel={() => setConfirmHomeOpen(false)}
+        onConfirm={() => {
+          setConfirmHomeOpen(false);
+          goHomeAndLogout();
+        }}
+      />
+      <ConfirmDialog
+        open={confirmLogoutOpen}
+        title="Logout?"
+        message="Are you sure you want to logout?"
+        confirmText="Logout"
+        cancelText="Cancel"
+        danger
+        onCancel={() => setConfirmLogoutOpen(false)}
+        onConfirm={() => {
+          setConfirmLogoutOpen(false);
+          logout();
+        }}
+      />
+    </>
   );
 };
 
